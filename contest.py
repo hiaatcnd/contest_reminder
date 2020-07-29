@@ -278,7 +278,7 @@ class TimeFilter:
         self.delta_time = delta_time
 
     async def __call__(self, contests):
-        now_time = datetime.now()
+        now_time = datetime.utcnow()
         limit_time = now_time + timedelta(seconds=self.delta_time)
         new_contests = []
         for contest in contests:
