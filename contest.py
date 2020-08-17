@@ -5,9 +5,12 @@ from datetime import datetime, timedelta, timezone
 import pytz
 import requests
 import time
+import json
+import os
 
-DEFALUT_SITES = {'codeforces.com', 'atcoder.jp',
-                 'yukicoder.me', 'topcoder.com/community'}
+DEFALUT_SITES = {
+    'codeforces.com', 'atcoder.jp', 'yukicoder.me', 'topcoder.com/community'
+}
 
 all_list = set()
 admins = {1023964019}
@@ -15,6 +18,57 @@ groups = {}
 last_time = {}
 
 cache_contests = []
+
+
+def trans(groups):
+    new_groups = {}
+    for k, v in groups.items():
+        new_groups[k] = list(v)
+    return new_groups
+
+
+def re_trans(groups):
+    new_groups = {}
+    for k, v in groups.items():
+        new_groups[int(k)] = set(v)
+    return new_groups
+
+
+@on_command("save")
+async def savec(session: CommandSession):
+    global groups
+    global admins
+    if session.event.user_id == 1023964019:
+        with open('groups.json', 'w') as f:
+            json.dump(trans(groups), f)
+        with open('admins.json', 'w') as f:
+            json.dump(list(admins), f)
+        await session.send('存档成功')
+    else:
+        await session.send('你无权进行此操作')
+
+
+@on_command("load")
+async def loadc(session: CommandSession):
+    global groups
+    global admins
+    global last_time
+    if session.event.user_id == 1023964019:
+        if os.path.exists('groups.json'):
+            with open('groups.json', 'r') as f:
+                groups = re_trans(json.load(f))
+                for group in groups:
+                    last_time[group] = None
+        else:
+            await session.send('groups.json文件不存在')
+        if os.path.exists('admins.json'):
+            with open('admins.json', 'r') as f:
+                admins = set(json.load(f))
+        else:
+            await session.send('admins.json文件不存在')
+        await session.send('读档完成：{}'.format(groups))
+    else:
+        await session.send('你无权进行此操作')
 
 
 @on_command("addq")
@@ -27,6 +81,8 @@ async def add_admin(session: CommandSession):
             await session.send("添加成功：", qq)
         else:
             await session.send("添加失败，请重试")
+    else:
+        await session.send('你无权进行此操作')
 
 
 @on_command("update")
@@ -53,6 +109,8 @@ async def add_group(session: CommandSession):
                 await session.send("已激活该群")
         else:
             await session.send("激活失败，请重试")
+    else:
+        await session.send('你无权进行此操作')
 
 
 @on_command("showsite")
@@ -131,7 +189,7 @@ async def ask_contests(session: CommandSession):
     await session.send(send_msg)
 
 
-@nonebot.scheduler.scheduled_job('cron', hour='23', minute='4')
+@nonebot.scheduler.scheduled_job('cron', hour='12')
 async def daily():
     global groups
     global cache_contests
@@ -142,11 +200,13 @@ async def daily():
         for group, sites in groups.items():
             site_filter = SiteFilter(sites)
             contests = await site_filter(cache_contests)
-            time_filter = TimeFilter(60*60*24*2)
+            time_filter = TimeFilter(60 * 60 * 24 * 2)
             contests = await time_filter(contests)
             if len(contests) > 0:
-                send_msg = "比赛小助手提醒您，两天内的比赛有：\n" + await contests_to_str(contests)
+                send_msg = "比赛小助手提醒您，两天内的比赛有：\n" + await contests_to_str(
+                    contests)
                 await bot.send_group_msg(group_id=group, message=send_msg)
+                time.sleep(3)
     except CQHttpError:
         pass
 
@@ -160,16 +220,19 @@ async def last_hour():
     now = datetime.utcnow()
     try:
         for group, sites in groups.items():
-            if last_time[group] and last_time[group] + timedelta(minutes=30) >= now:
+            if last_time[group] and last_time[group] + timedelta(
+                    minutes=30) >= now:
                 continue
             site_filter = SiteFilter(sites)
             contests = await site_filter(cache_contests)
-            time_filter = TimeFilter(60*60)
+            time_filter = TimeFilter(60 * 60)
             contests = await time_filter(contests)
             if len(contests) > 0:
                 last_time[group] = now
-                send_msg = "比赛小助手提醒您，一小时内的比赛有：\n" + await contests_to_str(contests)
+                send_msg = "比赛小助手提醒您，一小时内的比赛有：\n" + await contests_to_str(
+                    contests)
                 await bot.send_group_msg(group_id=group, message=send_msg)
+                time.sleep(3)
     except CQHttpError:
         pass
 
@@ -177,16 +240,14 @@ async def last_hour():
 async def contests_to_str(contests):
     msg = ""
     for contest in contests:
-        start_time = datetime.strptime(
-            contest["start"], '%Y-%m-%dT%H:%M:%S')
+        start_time = datetime.strptime(contest["start"], '%Y-%m-%dT%H:%M:%S')
         utc_dt = start_time.replace(tzinfo=timezone.utc)
-        bj_dt = utc_dt.astimezone(
-            timezone(timedelta(hours=8)))
+        bj_dt = utc_dt.astimezone(timezone(timedelta(hours=8)))
         bj_dt = bj_dt.replace(tzinfo=None).replace(microsecond=0)
 
         duration = timedelta(seconds=contest["duration"])
-        msg += contest['event'] + ' ' + str(bj_dt)[:-3] + ' ' + str(duration)[
-            :-3] + ' ' + contest['href'] + '\n'
+        msg += contest['event'] + ' ' + str(bj_dt)[:-3] + ' ' + str(
+            duration)[:-3] + ' ' + contest['href'] + '\n'
     return msg.strip()
 
 
@@ -202,8 +263,7 @@ async def get_list(params, filters, limit=300):
 
     times = 0
     while times < 10 and len(contests) < limit:
-        x = requests.get(
-            'https://clist.by:443/api/v1/contest', params=params)
+        x = requests.get('https://clist.by:443/api/v1/contest', params=params)
         if x.status_code != 200:
             times += 1
             time.sleep(10)
@@ -227,7 +287,8 @@ async def update_cache():
     global all_list
     global cache_contests
     check, cache_contests = await get_list(
-        {}, [SiteFilter(all_list), DurationFilter(5*60*60)])
+        {}, [SiteFilter(all_list),
+             DurationFilter(5 * 60 * 60)])
     if check == "fail":
         print('请求clist.by失败')
 
@@ -238,7 +299,8 @@ async def update_all_list(must=0):
     all_list = DEFALUT_SITES.copy()
     for sites in groups.values():
         all_list.update(sites)
-    if must or (all_list_backup != all_list and not all_list.issubset(all_list_backup)):
+    if must or (all_list_backup != all_list
+                and not all_list.issubset(all_list_backup)):
         await update_cache()
 
 
@@ -282,8 +344,8 @@ class TimeFilter:
         limit_time = now_time + timedelta(seconds=self.delta_time)
         new_contests = []
         for contest in contests:
-            start_time = datetime.strptime(
-                contest["start"], '%Y-%m-%dT%H:%M:%S')
+            start_time = datetime.strptime(contest["start"],
+                                           '%Y-%m-%dT%H:%M:%S')
             if start_time <= limit_time and start_time >= now_time:
                 new_contests.append(contest)
         return new_contests
